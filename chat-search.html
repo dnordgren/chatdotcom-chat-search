@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ChatGPT Search</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    #container {
+      display: flex;
+      flex-direction: row;
+      width: 100%;
+    }
+
+    #sidebar {
+      width: 300px;
+      min-width: 300px;
+      max-width: 300px;
+      border-right: 1px solid #ccc;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #content {
+      flex-grow: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 10px;
+    }
+
+    #buttons-input,
+    #search-bar {
+      padding: 10px;
+      border: 1px solid #ccc;
+      margin: 10px;
+      border-radius: 5px;
+    }
+
+    #chat-list {
+      flex-grow: 1;
+      overflow-y: auto;
+    }
+
+    .chat-item {
+      padding: 10px;
+      border-bottom: 1px solid #ddd;
+      cursor: pointer;
+    }
+
+    .chat-item:hover {
+      background-color: #f0f0f0;
+    }
+
+    #chat-window {
+      flex-grow: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .message {
+      margin: 10px;
+      padding: 10px;
+      border-radius: 10px;
+      max-width: 60%;
+    }
+
+    .message.user {
+      align-self: flex-end;
+      background-color: #d1e7dd;
+    }
+
+    .message.assistant {
+      align-self: flex-start;
+      background-color: #f8d7da;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="container">
+    <div id="sidebar">
+      <div id="buttons-input">
+        <button id="fetch-chat">Fetch Chat</button>
+      </div>
+      <div id="search-bar">
+        <input type="text" id="search" placeholder="Search chats">
+      </div>
+      <div id="chat-list"></div>
+    </div>
+    <div id="content">
+      <div id="chat-window"></div>
+    </div>
+  </div>
+  <script src="https://unpkg.com/flexsearch"></script>
+  <script>
+    const chatIndex = new FlexSearch.Document({
+      tokenize: "forward",
+      document: {
+        id: "id",
+        store: ["content"],
+        index: ["content"]
+      }
+    });
+
+    let chats = [];
+
+    async function fetchChat() {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = ".json";
+
+      input.onchange = async () => {
+        const file = input.files[0];
+        if (!file) return;
+
+        try {
+          const fileContent = await file.text();
+          const chatData = JSON.parse(fileContent);
+
+          const result = await saveToIndexedDB(chatData);
+          alert(result);
+
+          indexChats(chatData);
+          renderChats(chatData);
+        } catch (error) {
+          alert("Failed to import chat history. Error: " + error.message);
+        }
+      };
+
+      input.click();
+    }
+
+    function indexChats(chatData) {
+      chatData.forEach(chat => {
+        chatIndex.add({
+          id: chat.id || chat.conversation_id,
+          content: chat.title || "Untitled Chat"
+        });
+      });
+    }
+
+    function selectChat(chat) {
+      const chatWindow = document.getElementById("chat-window");
+      chatWindow.innerHTML = "";
+
+      Object.values(chat.mapping || {}).forEach(node => {
+        if (node.message && node.message.content && node.message.content.parts && node.message.content.parts.join(" ").trim() !== "") {
+          const messageBubble = document.createElement("div");
+          const roleClass = node.message.author.role === "user" ? "user" : "assistant";
+          messageBubble.className = `message ${roleClass}`;
+          messageBubble.textContent = node.message.content.parts.join(" ");
+          chatWindow.appendChild(messageBubble);
+        }
+      });
+    }
+
+    function renderChats(chatData) {
+      const chatList = document.getElementById("chat-list");
+      chatList.innerHTML = "";
+
+      const sortedChats = chatData.sort((a, b) => (b.create_time || 0) - (a.create_time || 0));
+
+      sortedChats.forEach(chat => {
+        const div = document.createElement("div");
+        div.className = "chat-item";
+
+        div.textContent = chat.title || "Untitled Chat";
+        div.onclick = () => selectChat(chat);
+
+        chatList.appendChild(div);
+      });
+    }
+
+    function searchChats() {
+      const query = document.getElementById("search").value;
+
+      if (!query || query.trim() === "") {
+        renderChats(chats);
+        return;
+      }
+
+      const searchResults = chatIndex.search(query, 10, { enrich: true });
+      const matchingChatIds = searchResults[0]?.result.map(result => result.id);
+      loadFromIndexedDB().then(storedChats => {
+        const filteredChats = storedChats.filter(chat => matchingChatIds.includes(chat.id) || matchingChatIds.includes(chat.conversation_id));
+        renderChats(filteredChats);
+      });
+    }
+
+    function openIndexedDB() {
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open("ChatApp", 1);
+
+        request.onupgradeneeded = event => {
+          const db = event.target.result;
+          if (!db.objectStoreNames.contains("chats")) {
+            db.createObjectStore("chats", { keyPath: "id" });
+          }
+          resolve(db);
+        };
+
+        request.onsuccess = event => resolve(event.target.result);
+        request.onerror = () => reject("Failed to open IndexedDB.");
+      });
+    }
+
+    async function saveToIndexedDB(chatData) {
+      const db = await openIndexedDB();
+      const transaction = db.transaction("chats", "readwrite");
+      const store = transaction.objectStore("chats");
+      chatData.forEach(chat => store.put(chat));
+      return new Promise((resolve, reject) => {
+        transaction.oncomplete = () => resolve("Chat history saved to IndexedDB!");
+        transaction.onerror = () => reject("Failed to save chat history to IndexedDB.");
+      });
+    }
+
+    async function loadFromIndexedDB() {
+      const db = await openIndexedDB();
+      const transaction = db.transaction("chats", "readonly");
+      const store = transaction.objectStore("chats");
+      const data = [];
+      return new Promise((resolve, reject) => {
+        store.openCursor().onsuccess = event => {
+          const cursor = event.target.result;
+          if (cursor) {
+            data.push(cursor.value);
+            cursor.continue();
+          } else {
+            resolve(data);
+          }
+        };
+        transaction.onerror = () => reject("Failed to load chat history from IndexedDB.");
+      });
+    }
+
+    document.getElementById("fetch-chat").onclick = fetchChat;
+    document.getElementById("search").oninput = searchChats;
+
+    loadFromIndexedDB().then(c => {
+      chats = c;
+      indexChats(chats);
+      renderChats(chats);
+    });
+  </script>
+</body>
+
+</html>
