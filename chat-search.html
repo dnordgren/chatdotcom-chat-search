@@ -13,6 +13,8 @@
       display: flex;
       height: 100vh;
       overflow: hidden;
+      background-color: #ffffff;
+      color: #000000;
     }
 
     #container {
@@ -82,6 +84,63 @@
     .message.assistant {
       align-self: flex-start;
       background-color: #f8d7da;
+    }
+
+    /* Dark mode (detected automatically) */
+    @media (prefers-color-scheme: dark) {
+      body {
+        background-color: #121212;
+        color: #ffffff;
+      }
+
+      #sidebar {
+        border-right: 1px solid #333;
+      }
+
+      .chat-item {
+        border-bottom: 1px solid #444;
+      }
+
+      .chat-item:hover {
+        background-color: #333333;
+      }
+
+      .message.user {
+        background-color: #2e7d32;
+      }
+
+      .message.assistant {
+        background-color: #8b0000;
+      }
+
+      input[type="text"],
+      button {
+        background-color: #333333;
+        color: #ffffff;
+        border: 1px solid #555;
+        border-radius: 5px;
+        padding: 10px;
+      }
+
+      input[type="text"]::placeholder {
+        color: #bbbbbb;
+      }
+
+      input[type="text"]:focus,
+      button:hover {
+        border-color: #777;
+        outline: none;
+      }
+
+      button {
+        cursor: pointer;
+      }
+
+      button:active {
+        background-color: #555;
+      }
+    }
+
     }
   </style>
 </head>
