@@ -107,8 +107,8 @@
       tokenize: "forward",
       document: {
         id: "id",
-        store: ["content"],
-        index: ["content"]
+        store: ["title", "content"],
+        index: ["title", "content"]
       }
     });
 
@@ -142,9 +142,16 @@
 
     function indexChats(chatData) {
       chatData.forEach(chat => {
+        const title = chat.title || "Untitled Chat";
+        // TODO ChatGPT has some content that isn't for display purposes; we should filter that out.
+        const content = Object.values(chat.mapping || {})
+          .map(node => node.message?.content?.parts?.join(" ") || "")
+          .join(" ");
+
         chatIndex.add({
           id: chat.id || chat.conversation_id,
-          content: chat.title || "Untitled Chat"
+          title,
+          content,
         });
       });
     }
@@ -182,15 +189,16 @@
     }
 
     function searchChats() {
-      const query = document.getElementById("search").value;
+      const query = document.getElementById("search").value.trim();
 
-      if (!query || query.trim() === "") {
+      if (!query) {
         renderChats(chats);
         return;
       }
 
       const searchResults = chatIndex.search(query, 10, { enrich: true });
       const matchingChatIds = searchResults[0]?.result.map(result => result.id);
+
       loadFromIndexedDB().then(storedChats => {
         const filteredChats = storedChats.filter(chat => matchingChatIds.includes(chat.id) || matchingChatIds.includes(chat.conversation_id));
         renderChats(filteredChats);
